@@ -188,7 +188,7 @@
     app.innerHTML = nav("home") +
       '<main>' +
       '<section class="hero2"><div class="wrap hero2-in">' +
-        "<div>" + (user ? '<p class="hello">Welcome back, ' + esc(displayName().split(" ")[0]) + "</p>" : '<p class="eyebrow">Free digital skills school</p>') +
+        "<div>" + (user ? '<p class="hello">' + (hasAnyProgress() ? "Welcome back, " : "Welcome, ") + esc(displayName().split(" ")[0]) + "</p>" : '<p class="eyebrow">Free digital skills school</p>') +
           "<h1>Go from zero to your first gig.</h1>" +
           '<p class="hero-sub">Interactive classes that teach you step by step, an AI tutor that answers your questions, and real projects reviewed by AI. No long videos. No confusion about where to start.</p>' +
           '<div class="hero-cta"><a class="btn big" href="' + (user || !sb ? "#skills" : "#/login") + '" data-scroll="skills">' + (user ? "Continue learning" : "Start learning free") + '</a><a class="btn soft big" href="#skills" data-scroll="skills">Browse skills</a></div>' +
@@ -795,6 +795,75 @@
       .then(function () { zBusy = false; zeeRender(); });
   }
 
+  // ---------- first-time welcome ----------
+  // Shown once, right after a learner's first sign-in: greets them, explains how it works,
+  // asks what they want to do and takes them straight into their first class.
+  function hasAnyProgress() {
+    var d = load();
+    return Object.keys(d).some(function (k) { var c = d[k]; return c && typeof c === "object" && ((c.step || 0) > 0 || c.done); });
+  }
+  function closeWelcome(el) {
+    try { localStorage.setItem("z2g-welcomed:" + user.id, "1"); } catch (e) {}
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    document.documentElement.classList.remove("no-scroll");
+  }
+  function maybeWelcome() {
+    if (!user || document.getElementById("welcome")) return;
+    var home = !location.hash || location.hash === "#/" || location.hash === "#";
+    if (!home) return;                                   // they came for a specific class: don't interrupt
+    try { if (localStorage.getItem("z2g-welcomed:" + user.id)) return; } catch (e) { return; }
+    if (hasAnyProgress()) { try { localStorage.setItem("z2g-welcomed:" + user.id, "1"); } catch (e) {} return; }
+    var first = esc(displayName().split(" ")[0] || "there");
+    var el = document.createElement("div");
+    el.id = "welcome"; el.className = "welcome";
+    el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-labelledby", "welcome-h");
+    el.innerHTML =
+      '<div class="welcome-card">' +
+        '<div class="welcome-step" data-step="1">' +
+          '<p class="eyebrow">You’re in 🎉</p>' +
+          '<h2 id="welcome-h">Welcome to ' + esc(SITE.name) + ", " + first + "</h2>" +
+          '<p class="welcome-lead">Here’s how you go from zero to your first gig:</p>' +
+          '<ol class="welcome-how">' +
+            "<li><b>Pick one skill</b><span>Start with one. You can add more later.</span></li>" +
+            "<li><b>Take short classes</b><span>About 15 minutes each, with questions as you go.</span></li>" +
+            "<li><b>Build a real project</b><span>Our AI reviews it and tells you how to improve.</span></li>" +
+          "</ol>" +
+          '<button class="btn big" type="button" id="welcome-next">Let’s pick your skill</button>' +
+          '<button class="welcome-skip" type="button" data-close>I’ll look around first</button>' +
+        "</div>" +
+        '<div class="welcome-step" data-step="2" hidden>' +
+          '<p class="eyebrow">One quick question</p>' +
+          '<h2>What sounds most like you?</h2>' +
+          '<p class="welcome-lead">Tap one. There’s no wrong answer, and you can switch any time.</p>' +
+          '<div class="chips2 welcome-chips">' + MATCH.map(function (m, k) { return '<button type="button" data-wmatch="' + k + '" aria-pressed="false">' + esc(m[0]) + "</button>"; }).join("") + "</div>" +
+          '<div id="welcome-out" aria-live="polite"></div>' +
+          '<button class="welcome-skip" type="button" data-close>Show me all the skills</button>' +
+        "</div>" +
+      "</div>";
+    document.body.appendChild(el);
+    document.documentElement.classList.add("no-scroll");
+    el.querySelectorAll("[data-close]").forEach(function (b) { b.addEventListener("click", function () { closeWelcome(el); }); });
+    el.addEventListener("keydown", function (e) { if (e.key === "Escape") closeWelcome(el); });
+    el.querySelector("#welcome-next").addEventListener("click", function () {
+      el.querySelector('[data-step="1"]').hidden = true; el.querySelector('[data-step="2"]').hidden = false;
+      var c = el.querySelector("[data-wmatch]"); if (c) c.focus();
+    });
+    el.querySelectorAll("[data-wmatch]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        el.querySelectorAll("[data-wmatch]").forEach(function (x) { x.setAttribute("aria-pressed", "false"); });
+        b.setAttribute("aria-pressed", "true");
+        var sk = find(MATCH[+b.dataset.wmatch][1]);
+        var out = el.querySelector("#welcome-out");
+        out.innerHTML =
+          '<div class="welcome-pick" style="--c:' + sk.color + '"><span class="cont-ico">' + ico(sk, 26) + "</span><div><small>We’d start you with</small><b>" + esc(sk.title) + "</b><span>" + sk.modules.length + " classes · free</span></div></div>" +
+          '<a class="btn big" id="welcome-go" href="#/skill/' + sk.id + '/class/0">Start my first class</a>';
+        out.querySelector("#welcome-go").addEventListener("click", function () { closeWelcome(el); });
+        out.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    });
+    var nx = el.querySelector("#welcome-next"); if (nx) nx.focus();
+  }
+
   // ---------- auth pages ----------
   function authShell(inner) {
     return nav() + '<main class="wrap"><section class="auth">' + inner + "</section></main>";
@@ -888,6 +957,7 @@
   function afterOAuth() {
     var n = null; try { n = localStorage.getItem("skillroute-next"); localStorage.removeItem("skillroute-next"); } catch (e) {}
     if (n && n !== location.hash) location.hash = n; else route();
+    setTimeout(maybeWelcome, 350);
   }
 
   try { var savedTheme = localStorage.getItem("z2g-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme; } catch (e) {}
