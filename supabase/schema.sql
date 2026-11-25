@@ -13,4 +13,6 @@
 grant select, insert, update on table public.progress to authenticated;
 grant select on table public.profiles to authenticated;
 grant update (reminders_on) on table public.profiles to authenticated;
+-- touch_activity() resets the learner's own reminder counter; without this the whole step is cancelled and streaks never save.
+grant update (reminders_sent) on table public.profiles to authenticated;
 grant select, insert on table public.activity to authenticated;
